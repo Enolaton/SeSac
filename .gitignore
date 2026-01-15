@@ -1,3 +1,4 @@
 /food
 /output/monthly_category_amt_202201_202511.csv
 /data/ignore
+/view/.streamlit/openai_key.toml
