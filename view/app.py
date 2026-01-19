@@ -1,139 +1,62 @@
 import streamlit as st
 import openai
-import json
 from datetime import datetime
-from collections import defaultdict
+# 분리한 모듈 불러오기
+import login
+import data_utils
+import gpt_utils
 
-# 1. API 키 및 클라이언트 설정
+# 1. 환경 설정
+st.set_page_config(page_title="AI 맛집 큐레이터", layout="centered")
+
 if "OPENAI_API_KEY" in st.secrets:
     client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 else:
-    st.error("API 키가 설정되지 않았습니다. .streamlit/secrets.toml을 확인하세요.")
+    st.error("API 키가 없습니다.")
     st.stop()
 
-# 2. JSON 데이터 로드
-@st.cache_data
-def load_data():
-    try:
-        with open('category_recommendation_map.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        st.error("category_recommendation_map.json 파일을 찾을 수 없습니다.")
-        return {}
+# 2. 세션 상태 초기화
+if 'authenticated' not in st.session_state: st.session_state['authenticated'] = False
+if 'generated' not in st.session_state: st.session_state['generated'] = False
 
-recommendation_data = load_data()
-
-# 3. 시간 문자열 파싱 (예: "11~13시" -> [11, 12])
-def parse_time_ranges(time_ranges):
-    hours = []
-    for tr in time_ranges:
-        # "11~13시"에서 숫자만 추출하여 범위 생성
-        parts = tr.replace('시', '').split('~')
-        start, end = int(parts[0]), int(parts[1])
-        hours.extend(range(start, end))
-    return hours
-
-# 4. JSON 기반 통계 분석 함수
-def analyze_data(gender, age_group, selected_times):
-    # 코드 매핑
-    g_code = "M" if gender == "남성" else "F"
-    a_code = {"20대": "2", "30대": "3", "40대": "4", "50대": "5", "60대 이상": "6"}.get(age_group, "2")
-    
-    # 시간대 설정 (선택 안하면 전체 시간)
-    target_hours = parse_time_ranges(selected_times) if selected_times else range(24)
-    
-    score_map = defaultdict(float)
-    # 모든 요일(1~7)에 대해 해당 시간대 점수 합산
-    for day in range(1, 8):
-        for hour in target_hours:
-            key = f"{a_code}_{g_code}_{day}_{hour}"
-            if key in recommendation_data:
-                for item in recommendation_data[key]:
-                    score_map[item['category']] += item['score']
-    
-    # 점수 높은 순으로 상위 3개 카테고리 추출
-    sorted_cats = sorted(score_map.items(), key=lambda x: x[1], reverse=True)
-    return [cat[0] for cat in sorted_cats[:3]]
-
-# 5. GPT 답변 생성 함수
-def get_gpt_response(gender, age, foods, times, user_prompt, data_cats):
-    system_msg = f"""
-    당신은 데이터 기반 맛집 전문가입니다.
-    통계적으로 이 사용자와 비슷한 그룹은 현재 [{', '.join(data_cats)}] 카테고리를 선호합니다.
-    이 데이터와 사용자의 요청을 조합해 최적의 맛집 3~5곳을 추천하세요. 이모지를 섞어 친절하게 답변하세요.
-    """
-    user_msg = f"프로필: {gender}/{age}, 선택카테고리: {foods if foods else '없음'}, 시간: {times if times else '무관'}, 요청: {user_prompt}"
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"GPT 호출 중 오류 발생: {e}"
-
-# ==========================================
-# UI 레이아웃
-# ==========================================
-st.set_page_config(page_title="AI 맛집 큐레이터", layout="centered")
-
-# CSS 스타일링 (버튼, 박스 등)
-st.markdown("""
-    <style>
-    .stSecondaryBlock { background-color: #ffffff; padding: 30px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-    div.stButton > button { background: linear-gradient(90deg, #FF4B2B 0%, #FF416C 100%); color: white; border-radius: 25px; width: 100%; border: none; font-weight: bold; }
-    .result-box { background-color: #f9f9f9; padding: 20px; border-left: 5px solid #FF4B2B; border-radius: 10px; }
-    </style>
-    """, unsafe_allow_html=True)
-
-if 'generated' not in st.session_state:
-    st.session_state['generated'] = False
-
-# 현재 시간 정보
-now = datetime.now()
-weekday_korean = ['월', '화', '수', '목', '금', '토', '일'][now.weekday()]
-current_time_str = now.strftime(f"%Y-%m-%d ({weekday_korean}) %H:%M")
-
-if not st.session_state['generated']:
-    st.title("🍽️ AI 맛집 큐레이터")
-    st.write("사용자 데이터와 AI를 결합해 최적의 맛집을 추천합니다.")
-    
-    with st.container():
-        st.markdown('<div class="stSecondaryBlock">', unsafe_allow_html=True)
-        
-        # 1. 여기서 변수들을 먼저 확실하게 정의합니다.
-        col1, col2 = st.columns(2)
-        with col1:
-            gender = st.selectbox("🙋‍♂️ 성별", ["남성", "여성"])
-        with col2:
-            age_group = st.selectbox("🎂 연령대", ["20대", "30대", "40대", "50대", "60대 이상"])
-
-        selected_foods = st.multiselect("🍕 선호 음식 카테고리 (선택사항)", ["한식", "양식", "중식", "일식", "분식", "카페/디저트", "고기", "술"], placeholder="원하는 음식 카테고리를 선택하세요 (미선택 시 전체 추천)")
-        selected_times = st.multiselect(f"⏰ 방문 시간 (현재: {current_time_str})", 
-                                        ["07~09시", "09~11시", "11~13시", "13~15시", "15~17시", "17~19시", "19~21시", "21~23시"], placeholder="방문하실 시간대를 선택해주세요 (미선택 시 현재 시각 기준)")
-
-        user_prompt = st.text_area("📝 상세 요청", placeholder="예: 조용하고 주차가 편한 분위기 좋은 곳")
-
-        # 버튼 클릭 시점에 위에서 정의된 gender, age_group 등을 사용함
-        if st.button("나를 위한 추천 받기 ✨"):
-            with st.spinner('데이터 분석 및 AI 추천 중...'):
-                # 분석 및 결과 저장
-                top_cats = analyze_data(gender, age_group, selected_times)
-                result = get_gpt_response(gender, age_group, selected_foods, selected_times, user_prompt, top_cats)
-                
-                st.session_state['res'] = result
-                st.session_state['cats'] = top_cats
-                st.session_state['generated'] = True
-                st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
+# 3. 화면 분기 로직
+if not st.session_state['authenticated']:
+    login.login_screen()
 else:
-    st.title("✨ 분석 및 추천 결과")
-    st.info(f"💡 분석 결과, 해당 시간대 유사 그룹은 **{', '.join(st.session_state['cats'])}**를 가장 선호합니다.")
-    
-    st.markdown(f"<div class='result-box'>{st.session_state['res'].replace(chr(10), '<br>')}</div>", unsafe_allow_html=True)
-    
-    if st.button("🔄 다시 설정하기"):
-        st.session_state['generated'] = False
-        st.rerun()
+    # --- [사이드바] ---
+    with st.sidebar:
+        st.write("🎉 환영합니다!")
+        if st.button("로그아웃"): auth.logout()
+
+    # --- [메인 페이지] ---
+    if not st.session_state['generated']:
+        st.title("🍽️ AI 맛집 큐레이터")
+        recommendation_data = data_utils.load_data()
+        
+        with st.container():
+            # (입력 위젯 CSS 주입 생략 - 이전과 동일하게 추가 가능)
+            col1, col2 = st.columns(2)
+            gender = col1.selectbox("🙋‍♂️ 성별", ["남성", "여성"])
+            age_group = col2.selectbox("🎂 연령대", ["20대", "30대", "40대", "50대", "60대 이상"])
+            selected_foods = st.multiselect("🍕 카테고리", ["한식", "양식", "중식", "일식", "분식", "고기", "술"], placeholder="카테고리 선택")
+            selected_times = st.multiselect("⏰ 시간대", ["07~09시", "11~13시", "17~19시", "21~23시"], placeholder="시간대 선택")
+            user_prompt = st.text_area("📝 상세 요청", placeholder="요구사항을 입력하세요")
+
+            if st.button("추천 받기 ✨"):
+                with st.spinner('분석 중...'):
+                    top_cats = data_utils.analyze_data(recommendation_data, gender, age_group, selected_times)
+                    refined_prompt = gpt_utils.process_long_prompt(client, user_prompt)
+                    result = gpt_utils.get_gpt_response(client, gender, age_group, selected_foods, selected_times, refined_prompt, top_cats)
+                    
+                    st.session_state['res'] = result
+                    st.session_state['cats'] = top_cats
+                    st.session_state['generated'] = True
+                    st.rerun()
+    else:
+        st.title("✨ 분석 결과")
+        st.info(f"💡 통계 분석 상위 카테고리: {', '.join(st.session_state['cats'])}")
+        st.markdown(f"<div style='padding:20px; background:#f9f9f9; border-left:5px solid #FF4B2B;'>{st.session_state['res'].replace('\n', '<br>')}</div>", unsafe_allow_html=True)
+        
+        if st.button("🔄 다시 하기"):
+            st.session_state['generated'] = False
+            st.rerun()

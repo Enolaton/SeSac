@@ -38,7 +38,7 @@ def parse_time_ranges(time_ranges):
 def analyze_data(gender, age_group, selected_times):
     g_code = "M" if gender == "남성" else "F"
     a_code = {"20대": "2", "30대": "3", "40대": "4", "50대": "5", "60대 이상": "6"}.get(age_group, "2")
-    target_hours = parse_time_ranges(selected_times) if selected_times else range(24)
+    target_hours = parse_time_ranges(selected_times) if selected_times else [int(datetime.now().strftime("%H")), int(datetime.now().strftime("%H"))+1]
     
     score_map = defaultdict(float)
     for day in range(1, 8):
@@ -53,7 +53,7 @@ def analyze_data(gender, age_group, selected_times):
 
 # 5. 프롬프트 청킹 및 요약 로직 (추가된 부분)
 def process_long_prompt(text):
-    # 300자 이상일 경우에만 청킹 진행 (기준은 조절 가능)
+    # 10자 이상일 경우에만 청킹 진행 (기준은 조절 가능)
     if len(text) < 10:
         return text
 
@@ -126,8 +126,8 @@ weekday_korean = ['월', '화', '수', '목', '금', '토', '일'][now.weekday()
 current_time_str = now.strftime(f"%Y-%m-%d ({weekday_korean}) %H:%M")
 
 if not st.session_state['generated']:
-    st.title("🍽️ AI 맛집 큐레이터")
-    st.write("사용자 데이터와 청킹 기술을 결합해 최적의 답변을 생성합니다.")
+    st.title("🍽️ AI 맛집 추천 서비스")
+    st.write("사용자 입력에 기반해 최적의 맛집을 추천합니다.")
     
     with st.container():
         st.markdown('<div class="stSecondaryBlock">', unsafe_allow_html=True)
@@ -144,9 +144,9 @@ if not st.session_state['generated']:
                                         ["07~09시", "09~11시", "11~13시", "13~15시", "15~17시", "17~19시", "19~21시", "21~23시"], 
                                         placeholder="시간대를 선택하세요")
 
-        user_prompt = st.text_area("📝 상세 요청 (길게 작성하셔도 AI가 핵심을 파악합니다)", placeholder="예: 친구 생일 파티를 할 건데, 강남역 부근에 주차가 가능하고 케이크 반입이 되는 조용한 룸 식당을 찾고 있어...")
+        user_prompt = st.text_area("📝 상세 요청", placeholder="예: 소개팅 맛집 추천해줘 / 친구들끼리 술마시기 좋은 장소 추천해줘 / 분위기 좋은 데이트 맛집 추천해줘")
 
-        if st.button("나를 위한 추천 받기 ✨"):
+        if st.button(" 추천 받기 "):
             with st.spinner('요청 내용을 분석하고 맛집을 찾는 중입니다...'):
                 # 1) 통계 데이터 분석
                 top_cats = analyze_data(gender, age_group, selected_times)
