@@ -1,3 +1,6 @@
 /food
 /output/monthly_category_amt_202201_202511.csv
 /data/ignore
+/view/.streamlit
+/data/data_dnn_study.ipynb
+/output/food_recommender_xgboost.pkl
